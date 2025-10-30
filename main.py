@@ -4,9 +4,21 @@
 # Maximilian Droschl and Dmitrii Bashelkhanov
 # =============================================================
 
+import os
+print(os.getcwd())
+os.chdir("/Users/MaximilianDroschl/Master/HS25/QRM/Assignment/code")
+
+from functions import (
+    preprocess_indices,
+    simulation,
+    portfolio_loss,
+    risk_measures,
+    dynamic_var_es_weekly_window
+)
+
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
-from functions import preprocess_indices, simulation, portfolio_loss, risk_measures
 
 # =============================================================
 # 1. Load Data
@@ -15,17 +27,19 @@ portfolio = pd.read_excel("data/qrm25HSG_creditportfolio.xlsx")
 indices = pd.read_excel("data/qrm25HSG_indexes.xlsx")
 
 # Preprocess
-indices_merged, Theta1, Theta2 = preprocess_indices(indices)
+# For weekly returns
+weekly_indices, Theta1_w, Theta2_w = preprocess_indices(indices, frequency="weekly")
+
 
 # =============================================================
-# 2. Run Simulations
+# Step (v) and (vi): Run Simulations
 # =============================================================
-Y_k_M1, d_k_M1, Sigma_M1 = simulation(portfolio, Theta1, Theta2, n_simulations=10000, model='M1')
-Y_k_M2, d_k_M2, Sigma_M2 = simulation(portfolio, Theta1, Theta2, n_simulations=10000, model='M2')
-Y_k_M3, d_k_M3, Sigma_M3 = simulation(portfolio, Theta1, Theta2, n_simulations=10000, model='M3')
+Y_k_M1, d_k_M1, Sigma_M1 = simulation(portfolio, Theta1_w, Theta2_w, n_simulations=10000, model='M1')
+Y_k_M2, d_k_M2, Sigma_M2 = simulation(portfolio, Theta1_w, Theta2_w, n_simulations=10000, model='M2')
+Y_k_M3, d_k_M3, Sigma_M3 = simulation(portfolio, Theta1_w, Theta2_w, n_simulations=10000, model='M2')
 
 # =============================================================
-# 3. Portfolio Loss Distributions
+# Step (vii): Portfolio Loss Distributions
 # =============================================================
 E_k = portfolio['Exposure USD'].values
 R_k = portfolio['R_k'].values
@@ -45,33 +59,11 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-fig, axes = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
-
-# --- M1 ---
-axes[0].hist(L_M1, bins=50, color='steelblue', alpha=0.7)
-axes[0].set_title('Portfolio Loss Distribution — Model M1 (Empirical)')
-axes[0].set_ylabel('Frequency')
-
-# --- M2 ---
-axes[1].hist(L_M2, bins=50, color='darkorange', alpha=0.7)
-axes[1].set_title('Portfolio Loss Distribution — Model M2 (Gaussian)')
-axes[1].set_ylabel('Frequency')
-
-# --- M3 ---
-axes[2].hist(L_M3, bins=50, color='seagreen', alpha=0.7)
-axes[2].set_title('Portfolio Loss Distribution — Model M3 (t-Copula)')
-axes[2].set_xlabel('Portfolio Loss (USD)')
-axes[2].set_ylabel('Frequency')
-
-plt.tight_layout()
-plt.show()
-
-
 # =============================================================
-# 4. Compute VaR and ES
+# Step (viii): Compute VaR and ES
 # =============================================================
 models = {'M1 (Empirical)': L_M1, 'M2 (Gaussian)': L_M2, 'M3 (t-Copula)': L_M3}
-alphas = [0.95, 0.99]
+alphas = [0.95]
 
 risk_results = []
 for model_name, L in models.items():
@@ -87,9 +79,28 @@ for model_name, L in models.items():
         })
 
 risk_df = pd.DataFrame(risk_results)
-print("\n=== Portfolio Risk Metrics ===")
 print(risk_df)
 
 
 
-window = 500
+# ============================================================================
+# Step (ix): Dynamic VaR and ES (rolling 500-day window)
+# ============================================================================
+dynamic_risk = dynamic_var_es_weekly_window(
+    portfolio,
+    indices,
+    window=500,
+    n_simulations=5000,
+    alpha=0.99
+)
+
+# Plot results
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10,5))
+plt.plot(dynamic_risk['Date'], dynamic_risk['VaR_M1'], label='VaR M1')
+plt.plot(dynamic_risk['Date'], dynamic_risk['VaR_M2'], label='VaR M2')
+plt.plot(dynamic_risk['Date'], dynamic_risk['VaR_M3'], label='VaR M3')
+plt.title('Dynamic Value-at-Risk (weekly returns, rolling 500 daily window)')
+plt.legend()
+plt.show()

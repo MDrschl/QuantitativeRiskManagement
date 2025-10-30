@@ -8,24 +8,51 @@ import pandas as pd
 import numpy as np
 from scipy.stats import norm, multivariate_normal
 from copulae import StudentCopula
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
 
 
 # -------------------------------------------------------------
 # (1) Data Preprocessing
 # -------------------------------------------------------------
-def preprocess_indices(indices_df):
+def preprocess_indices(indices_df, frequency="daily"):
     """
-    Cleans and merges index data (SPI and SPX) and computes weekly log returns.
+    Cleans and merges index data (SPI and SPX) and computes log returns.
+    
+    Parameters
+    ----------
+    indices_df : pd.DataFrame
+        Raw dataframe with SPI and SPX columns.
+    frequency : str, optional
+        Frequency of returns to compute. Options:
+        - "daily"  (default)
+        - "weekly" (uses Friday or last business day of week)
+    
+    Returns
+    -------
+    indices_merged : pd.DataFrame
+        Cleaned dataframe with log returns.
+    Theta1 : np.ndarray
+        SPI log returns.
+    Theta2 : np.ndarray
+        SPX log returns.
     """
+    import pandas as pd
+    import numpy as np
+
+    # Clean the dataframe
     indices_clean = indices_df.copy()
     indices_clean.columns = ['SPI_Date', 'SPI', 'SPX_Date', 'SPX']
-    indices_clean = indices_clean.iloc[1:]
-    
+    indices_clean = indices_clean.iloc[1:]  # remove header row if duplicated
+
+    # Convert to datetime and numeric
     indices_clean['SPI_Date'] = pd.to_datetime(indices_clean['SPI_Date'])
     indices_clean['SPX_Date'] = pd.to_datetime(indices_clean['SPX_Date'])
     indices_clean['SPI'] = pd.to_numeric(indices_clean['SPI'], errors='coerce')
     indices_clean['SPX'] = pd.to_numeric(indices_clean['SPX'], errors='coerce')
-    
+
+    # Merge
     spi_df = indices_clean[['SPI_Date', 'SPI']].rename(columns={'SPI_Date': 'Date'})
     spx_df = indices_clean[['SPX_Date', 'SPX']].rename(columns={'SPX_Date': 'Date'})
     indices_merged = (
@@ -33,15 +60,29 @@ def preprocess_indices(indices_df):
         .sort_values('Date')
         .dropna()
     )
-    
+
+    if frequency == "weekly":
+        indices_merged = (
+            indices_merged
+            .set_index('Date')
+            .resample('W-FRI')
+            .last()
+            .dropna()
+            .reset_index()
+        )
+    elif frequency != "daily":
+        raise ValueError("frequency must be either 'daily' or 'weekly'")
+
+    # Compute log returns
     indices_merged['SPI_logret'] = np.log(indices_merged['SPI'] / indices_merged['SPI'].shift(1))
     indices_merged['SPX_logret'] = np.log(indices_merged['SPX'] / indices_merged['SPX'].shift(1))
     indices_merged = indices_merged.dropna()
-    
+
     Theta1 = indices_merged['SPI_logret'].values
     Theta2 = indices_merged['SPX_logret'].values
-    
+
     return indices_merged, Theta1, Theta2
+
 
 
 # -------------------------------------------------------------
@@ -133,3 +174,112 @@ def risk_measures(L, alpha=0.95):
     var = np.quantile(L, alpha)
     es = L[L >= var].mean()
     return var, es
+
+# -------------------------------------------------------------
+# (4) Convert Daily to Weekly Log Returns
+# -------------------------------------------------------------
+def convert_weekly(indices_daily):
+    """
+    Aggregates daily index levels to weekly frequency and computes weekly log returns.
+
+    Parameters
+    ----------
+    indices_daily : pd.DataFrame
+        DataFrame with columns ['Date', 'SPI', 'SPX'] at daily frequency.
+
+    Returns
+    -------
+    indices_weekly : pd.DataFrame
+        DataFrame with weekly SPI and SPX levels and weekly log returns.
+    Theta1_weekly : np.ndarray
+        Weekly log returns of SPI (for Θ₁).
+    Theta2_weekly : np.ndarray
+        Weekly log returns of SPX (for Θ₂).
+    """
+    df = indices_daily.copy()
+    df = df.sort_values("Date").set_index("Date")
+
+    # --- Resample to weekly frequency using last available trading day ---
+    df_weekly = df.resample("W-FRI").last().dropna()
+
+    # --- Compute weekly log returns ---
+    df_weekly["SPI_logret"] = np.log(df_weekly["SPI"] / df_weekly["SPI"].shift(1))
+    df_weekly["SPX_logret"] = np.log(df_weekly["SPX"] / df_weekly["SPX"].shift(1))
+    df_weekly = df_weekly.dropna().reset_index()
+
+    # --- Extract as numpy arrays for simulation ---
+    Theta1_weekly = df_weekly["SPI_logret"].values
+    Theta2_weekly = df_weekly["SPX_logret"].values
+
+    return df_weekly, Theta1_weekly, Theta2_weekly
+
+
+def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulations=5000, alpha=0.99):
+    """
+    Compute dynamic VaR and ES over time using models M1 to M3.
+    At each day, use the last 500 daily observations to compute weekly returns,
+    fit the model, and simulate losses.
+
+    Parameters
+    ----------
+    portfolio : pd.DataFrame
+        Portfolio data.
+    indices_df : pd.DataFrame
+        Raw indices dataframe with SPI and SPX columns.
+    window : int, default=500
+        Rolling window length in trading days.
+    n_simulations : int, default=5000
+        Number of simulations per window.
+    alpha : float, default=0.99
+        Confidence level for VaR and ES.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: Date, VaR_M1, ES_M1, VaR_M2, ES_M2, VaR_M3, ES_M3
+    """
+
+    # Clean and merge full daily data once
+    daily_data, _, _ = preprocess_indices(indices_df, frequency="daily")
+
+    results = []
+    dates = daily_data['Date'].iloc[window:].reset_index(drop=True)
+
+    # Rolling loop
+    for i in tqdm(range(window, len(daily_data))):
+        # 1. Select the rolling 500-day window
+        sample = daily_data.iloc[i - window:i].copy()
+
+        # 2. Convert that window into weekly returns
+        weekly = (
+            sample.set_index('Date')
+            .resample('W-FRI')
+            .last()
+            .dropna()
+            .reset_index()
+        )
+        weekly['SPI_logret'] = np.log(weekly['SPI'] / weekly['SPI'].shift(1))
+        weekly['SPX_logret'] = np.log(weekly['SPX'] / weekly['SPX'].shift(1))
+        weekly = weekly.dropna()
+        Theta1 = weekly['SPI_logret'].values
+        Theta2 = weekly['SPX_logret'].values
+
+        # 3. Run simulations for each model
+        var_es = {}
+        for model in ['M1', 'M2', 'M3']:
+            try:
+                Y_k, d_k, Sigma = simulation(portfolio, Theta1, Theta2, n_simulations=n_simulations, model=model)
+                losses = portfolio_loss(Y_k, d_k)
+                var_t, es_t = risk_measures(losses, alpha=alpha)
+                var_es[f'VaR_{model}'] = var_t
+                var_es[f'ES_{model}'] = es_t
+            except Exception as e:
+                # Handle convergence/numerical issues gracefully
+                var_es[f'VaR_{model}'] = np.nan
+                var_es[f'ES_{model}'] = np.nan
+
+        var_es['Date'] = daily_data['Date'].iloc[i]
+        results.append(var_es)
+
+    results_df = pd.DataFrame(results)
+    return results_df

@@ -214,7 +214,7 @@ def convert_weekly(indices_daily):
     return df_weekly, Theta1_weekly, Theta2_weekly
 
 
-def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulations=5000, alpha=0.99):
+def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulations=5000, alpha=0.95):
     """
     Compute dynamic VaR and ES over time using models M1 to M3.
     At each day, use the last 500 daily observations to compute weekly returns,
@@ -266,7 +266,7 @@ def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulation
 
         # 3. Run simulations for each model
         var_es = {}
-        for model in ['M1', 'M2', 'M3']:
+        for model in ['M1', 'M2', 'M2']:
             try:
                 Y_k, d_k, Sigma = simulation(portfolio, Theta1, Theta2, n_simulations=n_simulations, model=model)
                 losses = portfolio_loss(Y_k, d_k)

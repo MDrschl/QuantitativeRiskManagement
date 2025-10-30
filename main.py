@@ -94,9 +94,6 @@ dynamic_risk = dynamic_var_es_weekly_window(
     alpha=0.99
 )
 
-# Plot results
-import matplotlib.pyplot as plt
-
 plt.figure(figsize=(10,5))
 plt.plot(dynamic_risk['Date'], dynamic_risk['VaR_M1'], label='VaR M1')
 plt.plot(dynamic_risk['Date'], dynamic_risk['VaR_M2'], label='VaR M2')

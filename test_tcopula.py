@@ -53,6 +53,96 @@ print(f"\n  Empirical Correlation (Pearson): {emp_corr_weekly:.4f}")
 print(f"  Copula Correlation (ρ):          {params_weekly['rho']:.4f}")
 print(f"  Difference: {abs(emp_corr_weekly - params_weekly['rho']):.4f}")
 
+
+
+# =============================================================
+# A. Empirical Summary Statistics and Distribution Diagnostics
+# =============================================================
+import seaborn as sns
+import matplotlib.pyplot as plt
+from scipy.stats import skew, kurtosis, shapiro, normaltest, ttest_1samp, probplot
+
+print("\n" + "="*60)
+print("Empirical Distribution Analysis of Weekly Log-Returns (Θ)")
+print("="*60)
+
+def summarize_series(name, data):
+    print(f"\n{name}:")
+    print(f"  N = {len(data)}")
+    print(f"  Mean = {np.mean(data):.6f}")
+    print(f"  Std  = {np.std(data, ddof=1):.6f}")
+    print(f"  Skewness = {skew(data):.4f}")
+    print(f"  Kurtosis (excess) = {kurtosis(data, fisher=True):.4f}")
+    print(f"  Min = {np.min(data):.4f}")
+    print(f"  Max = {np.max(data):.4f}")
+    print(f"  1% / 5% / 95% / 99% quantiles = {np.percentile(data,[1,5,95,99])}")
+
+    # Normality tests
+    stat, pval = normaltest(data)
+    print(f"  D’Agostino–Pearson normality test p = {pval:.4e}")
+    if pval < 0.05:
+        print("  → Reject normality (heavy tails or skewed)")
+    else:
+        print("  → Fail to reject normality")
+
+# Print summary
+summarize_series("SPI weekly log-returns", Theta1_w)
+summarize_series("SPX weekly log-returns", Theta2_w)
+
+# Combined correlation
+corr = np.corrcoef(Theta1_w, Theta2_w)[0,1]
+print(f"\nCorrelation between SPI and SPX weekly returns: {corr:.4f}")
+
+# =============================================================
+# B. Visualization: Distribution and QQ plots
+# =============================================================
+fig, axes = plt.subplots(2, 3, figsize=(14, 8))
+
+# 1. Histogram + KDE
+sns.histplot(Theta1_w, kde=True, bins=30, ax=axes[0,0], color="steelblue")
+axes[0,0].set_title("SPI Weekly Log-Returns")
+
+sns.histplot(Theta2_w, kde=True, bins=30, ax=axes[1,0], color="coral")
+axes[1,0].set_title("SPX Weekly Log-Returns")
+
+# 2. Boxplots
+sns.boxplot(x=Theta1_w, ax=axes[0,1], color="steelblue")
+axes[0,1].set_title("SPI Boxplot")
+sns.boxplot(x=Theta2_w, ax=axes[1,1], color="coral")
+axes[1,1].set_title("SPX Boxplot")
+
+# 3. QQ-plots (normal)
+probplot(Theta1_w, dist="norm", plot=axes[0,2])
+axes[0,2].set_title("SPI QQ-Plot (Normal)")
+probplot(Theta2_w, dist="norm", plot=axes[1,2])
+axes[1,2].set_title("SPX QQ-Plot (Normal)")
+
+plt.tight_layout()
+plt.savefig("weekly_returns_diagnostics.png", dpi=300, bbox_inches="tight")
+plt.show()
+
+print("\nSaved: weekly_returns_diagnostics.png")
+
+# =============================================================
+# C. Empirical distribution comment
+# =============================================================
+spi_sk = skew(Theta1_w)
+spi_ku = kurtosis(Theta1_w)
+spx_sk = skew(Theta2_w)
+spx_ku = kurtosis(Theta2_w)
+
+print("\nInterpretation:")
+if spi_ku > 3 or spx_ku > 3:
+    print("  Both series exhibit strong excess kurtosis → heavy tails likely.")
+if abs(spi_sk) > 0.5 or abs(spx_sk) > 0.5:
+    print("  Noticeable skewness detected → asymmetry in returns.")
+if corr > 0.7:
+    print("  High cross-market correlation, indicating joint movements.")
+else:
+    print("  Moderate correlation.")
+
+
+
 # =============================================================
 # 3. Test on Daily Data
 # =============================================================
@@ -206,6 +296,39 @@ print(f"\nComparison with full pipeline:")
 print(f"  Pipeline ρ: {params_weekly['rho']:.4f}")
 print(f"  Direct ρ:   {rho_direct:.4f}")
 print(f"  Difference: {abs(params_weekly['rho'] - rho_direct):.6f}")
+# =============================================================
+# 8. External validation with copulae package (for M3)
+# =============================================================
+print("\n" + "="*60)
+print("8. Cross-checking t-Copula fit with copulae package (Model M3)")
+print("="*60)
+
+from copulae import TCopula
+
+# Create a t-Copula object with unspecified parameters
+t_copula_pkg = TCopula(dim=2)
+
+# Fit using the same uniform marginals as your own implementation
+# copulae expects a (n x 2) array of uniforms
+U = np.column_stack([u1_test, u2_test])
+
+t_copula_pkg.fit(U, method='ml')  # maximum likelihood
+
+# Extract fitted parameters
+rho_pkg = float(t_copula_pkg.params.rho)
+nu_pkg = float(t_copula_pkg.params.df)
+
+print(f"\nCopulae package estimates:")
+print(f"  ρ (rho): {rho_pkg:.4f}")
+print(f"  ν (nu):  {nu_pkg:.4f}")
+
+# Compare to your implementation
+print("\nComparison with your implementation:")
+print(f"  Your ρ: {rho_direct:.4f}")
+print(f"  Your ν: {nu_direct:.4f}")
+print(f"  Δρ = {abs(rho_pkg - rho_direct):.6f}")
+print(f"  Δν = {abs(nu_pkg - nu_direct):.6f}")
+
 
 # =============================================================
 # Summary

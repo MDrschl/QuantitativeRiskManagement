@@ -169,24 +169,24 @@ def fit_t_copula(u1, u2, init_rho=None, init_nu=None):
     for start in starting_points:
         # Ensure starting point is within bounds
         start[0] = np.clip(start[0], -0.98, 0.98)
-        start[1] = np.clip(start[1], 2.2, 99)
+        start[1] = np.clip(start[1], 2.1, 99)
         
         try:
             result = minimize(
                 t_copula_neg_loglik,
                 x0=start,
                 args=(u1, u2),
-                method= "Powell" or "Nelder-Mead",
+                method= "L-BFGS-B",
                 bounds=bounds,
-                options={'maxiter': 1000, 'ftol': 1e-9}
+                options={'maxiter': 100, 'ftol': 1e-12}
             )
             
             if result.fun < best_ll:
                 best_ll = result.fun
                 best_result = result
-                print("Optimisation step successful.")
         except:
             continue
+
     
     if best_result is None or not best_result.success:
         # Fallback to simple correlation if optimization fails

@@ -106,8 +106,8 @@ plt.ylabel('Density', fontsize=12)
 plt.legend(fontsize=10, loc='upper right')
 plt.grid(alpha=0.3)
 plt.tight_layout()
-#plt.savefig('loss_distributions.png', dpi=300, bbox_inches='tight')
-#print("Saved: loss_distributions.png")
+plt.savefig('loss_distributions.png', dpi=300, bbox_inches='tight')
+print("Saved: loss_distributions.png")
 plt.show()
 
 # =============================================================
@@ -202,7 +202,7 @@ axes[1].legend(fontsize=10, loc='upper left')
 axes[1].grid(alpha=0.3)
 
 plt.tight_layout()
-#plt.savefig('dynamic_risk_measures.png', dpi=300, bbox_inches='tight')
+plt.savefig('dynamic_risk_measures.png', dpi=300, bbox_inches='tight')
 print("Saved: dynamic_risk_measures.png")
 plt.show()
 
@@ -238,7 +238,7 @@ if 'rho_M3' in dynamic_risk.columns and 'nu_M3' in dynamic_risk.columns:
     axes[1].grid(alpha=0.3)
     
     plt.tight_layout()
-    #plt.savefig('copula_parameters_over_time.png', dpi=300, bbox_inches='tight')
+    plt.savefig('copula_parameters_over_time.png', dpi=300, bbox_inches='tight')
     print("Saved: copula_parameters_over_time.png")
     plt.show()
     

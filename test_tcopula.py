@@ -233,3 +233,19 @@ print(f"  - Daily returns:  ρ = {params_daily['rho']:.4f}, ν = {params_daily['
 print(f"  - Degrees of freedom suggest {'heavy tails' if params_weekly['nu'] < 10 else 'moderate tails' if params_weekly['nu'] < 30 else 'light tails'}")
 
 print("\n" + "="*60)
+
+from tcopula import t_copula_neg_loglik
+
+nus = np.linspace(2.1, 50, 100)
+rhos = [params_weekly['rho']]
+lls = []
+
+for nu in nus:
+    ll = -t_copula_neg_loglik([rhos[0], nu], u1, u2)
+    lls.append(ll)
+
+plt.plot(nus, lls)
+plt.xlabel('ν')
+plt.ylabel('Log-Likelihood')
+plt.title('t-Copula Log-Likelihood Profile in ν')
+plt.show()

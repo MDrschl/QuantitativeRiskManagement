@@ -7,7 +7,7 @@ import numpy as np
 from scipy.stats import t as t_dist, norm
 from scipy.optimize import minimize
 from scipy.special import gamma
-
+from scipy.stats import kendalltau
 
 def t_copula_pdf(u1, u2, rho, nu):
     """
@@ -71,12 +71,12 @@ def t_copula_neg_loglik(params, u1, u2):
     # Parameter constraints
     if rho <= -0.99 or rho >= 0.99:
         return 1e10
-    if nu <= 2.01 or nu > 100:  # Cap at 100 for numerical stability
+    if nu <= 2.01 or nu > 100: # Cap at 100 for numerical stability
         return 1e10
     
     # Handle edge cases
-    u1 = np.clip(u1, 1e-6, 1 - 1e-6)
-    u2 = np.clip(u2, 1e-6, 1 - 1e-6)
+    u1 = np.clip(u1, 1e-10, 1 - 1e-10)
+    u2 = np.clip(u2, 1e-10, 1 - 1e-10)
     
     try:
         pdf_vals = t_copula_pdf(u1, u2, rho, nu)
@@ -137,12 +137,14 @@ def fit_t_copula(u1, u2, init_rho=None, init_nu=None):
     
     if len(u1) < 20:
         # Not enough data
+        print("Not enough data.")
         return np.nan, np.nan, False
+        
     
     # Initial parameter guesses
     if init_rho is None:
         # Use Kendall's tau as initial estimate for rho
-        from scipy.stats import kendalltau
+        
         tau, _ = kendalltau(u1, u2)
         init_rho = np.sin(tau * np.pi / 2)
         init_rho = np.clip(init_rho, -0.9, 0.9)
@@ -182,11 +184,13 @@ def fit_t_copula(u1, u2, init_rho=None, init_nu=None):
             if result.fun < best_ll:
                 best_ll = result.fun
                 best_result = result
+                print("Optimisation step successful.")
         except:
             continue
     
     if best_result is None or not best_result.success:
         # Fallback to simple correlation if optimization fails
+        print("Fallback")
         return np.corrcoef(u1, u2)[0, 1], 10.0, False
     
     rho_opt = best_result.x[0]

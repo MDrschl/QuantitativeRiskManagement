@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import norm, multivariate_normal, t as t_dist
 from tqdm import tqdm
-from tcopula import fit_gaussian_marginals_and_t_copula
+from tcopula import fit_t_copula
 
 
 # -------------------------------------------------------------
@@ -69,8 +69,12 @@ def preprocess_indices(indices_df, frequency="daily"):
         raise ValueError("frequency must be either 'daily' or 'weekly'")
 
     # Compute log returns
-    indices_merged['SPI_logret'] = np.log(indices_merged['SPI'] / indices_merged['SPI'].shift(1))
-    indices_merged['SPX_logret'] = np.log(indices_merged['SPX'] / indices_merged['SPX'].shift(1))
+    indices_merged['SPI_logret'] = np.log(
+        indices_merged['SPI'] / indices_merged['SPI'].shift(1)
+    )
+    indices_merged['SPX_logret'] = np.log(
+        indices_merged['SPX'] / indices_merged['SPX'].shift(1)
+    )
     indices_merged = indices_merged.dropna()
 
     Theta1 = indices_merged['SPI_logret'].values
@@ -85,7 +89,7 @@ def preprocess_indices(indices_df, frequency="daily"):
 def simulation(portfolio, Theta1, Theta2, n_simulations, model='M1', seed=42):
     """
     Simulate Y_k for all counterparties using models M1, M2, or M3.
-    M3 uses maximum likelihood estimation for t-copula parameters.
+    M3 uses maximum likelihood estimation for a t-copula with Gaussian marginals.
     
     Parameters
     ----------
@@ -138,53 +142,71 @@ def simulation(portfolio, Theta1, Theta2, n_simulations, model='M1', seed=42):
             [sigma1**2, rho * sigma1 * sigma2],
             [rho * sigma1 * sigma2, sigma2**2]
         ])
-        Theta_samples = multivariate_normal.rvs(mean=mu, cov=Sigma_Theta, size=n_simulations)
+        Theta_samples = multivariate_normal.rvs(
+            mean=mu, cov=Sigma_Theta, size=n_simulations
+        )
 
     elif model == 'M3':
         # t-Copula with Gaussian marginals using ML estimation
-        params = fit_gaussian_marginals_and_t_copula(Theta1, Theta2)
-        
-        if not params['converged']:
-            print("Warning: t-copula estimation did not converge. Falling back to Gaussian copula.")
-            # Fallback to M2
-            mu = np.array([params['mu1'], params['mu2']])
-            sigma1, sigma2 = params['sigma1'], params['sigma2']
-            rho = params['rho'] if not np.isnan(params['rho']) else np.corrcoef(Theta1, Theta2)[0, 1]
+        # 1) Estimate Gaussian marginals
+        mu1, sigma1 = np.mean(Theta1), np.std(Theta1, ddof=1)
+        mu2, sigma2 = np.mean(Theta2), np.std(Theta2, ddof=1)
+
+        # 2) Transform historical returns to uniforms via normal CDF
+        z1 = (Theta1 - mu1) / sigma1
+        z2 = (Theta2 - mu2) / sigma2
+        u1 = norm.cdf(z1)
+        u2 = norm.cdf(z2)
+
+        # 3) Fit t-copula to uniforms
+        rho_copula, nu_copula, converged = fit_t_copula(u1, u2)
+
+        # Fallback conditions:
+        #   - optimisation failed to converge
+        #   - rho or nu are NaN
+        if ((not converged) or
+            np.isnan(rho_copula) or
+            np.isnan(nu_copula)):
+            print("Warning: t-copula estimation did not converge. "
+                  "Falling back to Gaussian copula.")
+            # Fallback: Gaussian with same marginals
+            rho = np.corrcoef(Theta1, Theta2)[0, 1]
             Sigma_Theta = np.array([
                 [sigma1**2, rho * sigma1 * sigma2],
                 [rho * sigma1 * sigma2, sigma2**2]
             ])
-            Theta_samples = multivariate_normal.rvs(mean=mu, cov=Sigma_Theta, size=n_simulations)
+            mu = np.array([mu1, mu2])
+            Theta_samples = multivariate_normal.rvs(
+                mean=mu, cov=Sigma_Theta, size=n_simulations
+            )
             copula_params = {'rho': rho, 'nu': np.nan, 'converged': False}
         else:
-            mu1, sigma1 = params['mu1'], params['sigma1']
-            mu2, sigma2 = params['mu2'], params['sigma2']
-            rho_copula = params['rho']
-            nu_copula = params['nu']
-            
-            copula_params = {'rho': rho_copula, 'nu': nu_copula, 'converged': True}
-            
-            # Generate samples from t-copula
-            # 1. Sample from bivariate t with correlation rho
+            # Successful t-copula fit
+            copula_params = {
+                'rho': rho_copula,
+                'nu': nu_copula,
+                'converged': True
+            }
+
+            # 4) Generate samples from bivariate t with correlation rho_copula, df = nu_copula
             mean_t = np.zeros(2)
-            cov_t = np.array([[1, rho_copula], [rho_copula, 1]])
-            
-            # Generate multivariate t samples
-            # X ~ t_nu(0, Sigma) can be generated as X = Z / sqrt(S/nu)
-            # where Z ~ N(0, Sigma) and S ~ chi^2(nu)
+            cov_t = np.array([[1.0, rho_copula],
+                              [rho_copula, 1.0]])
+
+            # Generate multivariate t: X = Z / sqrt(S/nu), Z ~ N(0, cov_t), S ~ chi^2_nu
             Z = multivariate_normal.rvs(mean=mean_t, cov=cov_t, size=n_simulations)
             chi2_samples = np.random.chisquare(nu_copula, size=n_simulations)
             t_samples = Z / np.sqrt(chi2_samples / nu_copula)[:, np.newaxis]
-            
-            # 2. Transform to uniforms using t-cdf
+
+            # 5) Transform to uniforms using t CDF
             U_samples = t_dist.cdf(t_samples, df=nu_copula)
-            
-            # 3. Transform to Gaussian marginals
+
+            # 6) Map uniforms to Gaussian marginals with (mu_i, sigma_i)
             Theta_samples = np.zeros((n_simulations, 2))
             Theta_samples[:, 0] = norm.ppf(U_samples[:, 0], loc=mu1, scale=sigma1)
             Theta_samples[:, 1] = norm.ppf(U_samples[:, 1], loc=mu2, scale=sigma2)
-            
-            # Covariance matrix (using copula correlation)
+
+            # Covariance matrix implied by copula correlation and Gaussian marginals
             Sigma_Theta = np.array([
                 [sigma1**2, rho_copula * sigma1 * sigma2],
                 [rho_copula * sigma1 * sigma2, sigma2**2]
@@ -224,22 +246,6 @@ def simulation(portfolio, Theta1, Theta2, n_simulations, model='M1', seed=42):
 def portfolio_loss(Y_k, d_k, E_k, R_k):
     """
     Compute total (unnormalized) portfolio loss.
-    
-    Parameters
-    ----------
-    Y_k : np.ndarray
-        Credit factors (n_simulations × n_counterparties)
-    d_k : np.ndarray
-        Default thresholds (n_counterparties,)
-    E_k : np.ndarray
-        Exposures (n_counterparties,)
-    R_k : np.ndarray
-        Recovery rates (n_counterparties,)
-    
-    Returns
-    -------
-    L : np.ndarray
-        Portfolio losses (n_simulations,)
     """
     I_k = (Y_k <= d_k).astype(int)
     return np.sum(E_k * (1 - R_k) * I_k, axis=1)
@@ -248,20 +254,6 @@ def portfolio_loss(Y_k, d_k, E_k, R_k):
 def risk_measures(L, alpha=0.95):
     """
     Compute VaR and ES for given loss distribution.
-    
-    Parameters
-    ----------
-    L : np.ndarray
-        Loss distribution
-    alpha : float
-        Confidence level (default: 0.95)
-    
-    Returns
-    -------
-    var : float
-        Value-at-Risk at level alpha
-    es : float
-        Expected Shortfall at level alpha
     """
     var = np.quantile(L, alpha)
     es = L[L >= var].mean()
@@ -274,33 +266,16 @@ def risk_measures(L, alpha=0.95):
 def convert_weekly(indices_daily):
     """
     Aggregates daily index levels to weekly frequency and computes weekly log returns.
-
-    Parameters
-    ----------
-    indices_daily : pd.DataFrame
-        DataFrame with columns ['Date', 'SPI', 'SPX'] at daily frequency.
-
-    Returns
-    -------
-    indices_weekly : pd.DataFrame
-        DataFrame with weekly SPI and SPX levels and weekly log returns.
-    Theta1_weekly : np.ndarray
-        Weekly log returns of SPI (for Θ₁).
-    Theta2_weekly : np.ndarray
-        Weekly log returns of SPX (for Θ₂).
     """
     df = indices_daily.copy()
     df = df.sort_values("Date").set_index("Date")
 
-    # --- Resample to weekly frequency using last available trading day ---
     df_weekly = df.resample("W-FRI").last().dropna()
 
-    # --- Compute weekly log returns ---
     df_weekly["SPI_logret"] = np.log(df_weekly["SPI"] / df_weekly["SPI"].shift(1))
     df_weekly["SPX_logret"] = np.log(df_weekly["SPX"] / df_weekly["SPX"].shift(1))
     df_weekly = df_weekly.dropna().reset_index()
 
-    # --- Extract as numpy arrays for simulation ---
     Theta1_weekly = df_weekly["SPI_logret"].values
     Theta2_weekly = df_weekly["SPX_logret"].values
 
@@ -313,27 +288,6 @@ def convert_weekly(indices_daily):
 def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulations=5000, alpha=0.95):
     """
     Compute dynamic VaR and ES over time using models M1 to M3 with ML t-copula.
-    At each day, use the last 'window' daily observations to compute weekly returns,
-    fit the model, and simulate losses.
-
-    Parameters
-    ----------
-    portfolio : pd.DataFrame
-        Portfolio data.
-    indices_df : pd.DataFrame
-        Raw indices dataframe with SPI and SPX columns.
-    window : int, default=500
-        Rolling window length in trading days.
-    n_simulations : int, default=5000
-        Number of simulations per window.
-    alpha : float, default=0.95
-        Confidence level for VaR and ES.
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with columns: Date, VaR_M1, ES_M1, VaR_M2, ES_M2, VaR_M3, ES_M3,
-        rho_M3, nu_M3, converged_M3
     """
     # Clean and merge full daily data once
     daily_data, _, _ = preprocess_indices(indices_df, frequency="daily")
@@ -345,10 +299,8 @@ def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulation
 
     # Rolling loop
     for i in tqdm(range(window, len(daily_data)), desc="Rolling window analysis"):
-        # 1. Select the rolling window
         sample = daily_data.iloc[i - window:i].copy()
 
-        # 2. Convert that window into weekly returns
         weekly = (
             sample.set_index('Date')
             .resample('W-FRI')
@@ -360,13 +312,12 @@ def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulation
         weekly['SPX_logret'] = np.log(weekly['SPX'] / weekly['SPX'].shift(1))
         weekly = weekly.dropna()
         
-        if len(weekly) < 20:  # Need minimum data
+        if len(weekly) < 20:
             continue
             
         Theta1 = weekly['SPI_logret'].values
         Theta2 = weekly['SPX_logret'].values
 
-        # 3. Run simulations for each model
         var_es = {'Date': daily_data['Date'].iloc[i]}
         
         for model in ['M1', 'M2', 'M3']:
@@ -375,7 +326,7 @@ def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulation
                     portfolio, Theta1, Theta2, 
                     n_simulations=n_simulations, 
                     model=model,
-                    seed=42  # Use same seed for reproducibility
+                    seed=42
                 )
                 losses = portfolio_loss(Y_k, d_k, E_k, R_k)
                 var_t, es_t = risk_measures(losses, alpha=alpha)
@@ -383,14 +334,12 @@ def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulation
                 var_es[f'VaR_{model}'] = var_t
                 var_es[f'ES_{model}'] = es_t
                 
-                # Store copula parameters for M3
                 if model == 'M3' and copula_params is not None:
                     var_es['rho_M3'] = copula_params['rho']
                     var_es['nu_M3'] = copula_params['nu']
                     var_es['converged_M3'] = copula_params['converged']
                     
             except Exception as e:
-                # Handle convergence/numerical issues gracefully
                 print(f"Warning at date {daily_data['Date'].iloc[i]}: {str(e)}")
                 var_es[f'VaR_{model}'] = np.nan
                 var_es[f'ES_{model}'] = np.nan

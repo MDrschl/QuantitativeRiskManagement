@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Import functions from local modules
 from functions import (
     preprocess_indices,
     simulation,
@@ -18,9 +17,6 @@ from functions import (
     risk_measures,
     dynamic_var_es_weekly_window
 )
-
-# Set working directory (adjust as needed)
-# os.chdir("/Users/MaximilianDroschl/Master/HS25/QRM/Assignment/code")
 
 # =============================================================
 # 1. Load Data
@@ -35,7 +31,7 @@ indices = pd.read_excel("data/qrm25HSG_indexes.xlsx")
 print(f"Portfolio size: {len(portfolio)} counterparties")
 print(f"Indices data shape: {indices.shape}")
 
-# Preprocess for weekly returns
+# Weekly returns
 weekly_indices, Theta1_w, Theta2_w = preprocess_indices(indices, frequency="weekly")
 print(f"Weekly returns sample size: {len(Theta1_w)}")
 
@@ -46,21 +42,18 @@ print("\n" + "="*60)
 print("Running Full-Sample Simulations")
 print("="*60)
 
-# M1: Empirical resampling
 print("\nModel M1: Empirical resampling...")
 Y_k_M1, d_k_M1, Sigma_M1, params_M1 = simulation(
     portfolio, Theta1_w, Theta2_w, 
     n_simulations=10000, model='M1', seed=42
 )
 
-# M2: Gaussian copula
 print("Model M2: Gaussian copula...")
 Y_k_M2, d_k_M2, Sigma_M2, params_M2 = simulation(
     portfolio, Theta1_w, Theta2_w, 
     n_simulations=10000, model='M2', seed=42
 )
 
-# M3: t-Copula with ML estimation
 print("Model M3: t-Copula with ML estimation...")
 Y_k_M3, d_k_M3, Sigma_M3, params_M3 = simulation(
     portfolio, Theta1_w, Theta2_w, 
@@ -87,7 +80,7 @@ L_M1 = portfolio_loss(Y_k_M1, d_k_M1, E_k, R_k)
 L_M2 = portfolio_loss(Y_k_M2, d_k_M2, E_k, R_k)
 L_M3 = portfolio_loss(Y_k_M3, d_k_M3, E_k, R_k)
 
-print(f"Loss statistics computed for all models")
+print("Loss statistics computed for all models")
 
 # =============================================================
 # 4. Visualize Loss Distributions
@@ -111,7 +104,7 @@ print("Saved: loss_distributions.png")
 plt.show()
 
 # =============================================================
-# 5. Risk Measures at Multiple Confidence Levels
+# 5. Risk Measures
 # =============================================================
 print("\n" + "="*60)
 print("Computing Risk Measures")
@@ -122,7 +115,8 @@ models = {
     'M2 (Gaussian)': L_M2, 
     'M3 (t-Copula ML)': L_M3
 }
-alphas = [0.95]
+# Use 90%, 95%, 99% confidence levels
+alphas = [0.90, 0.95, 0.99]
 
 risk_results = []
 for model_name, L in models.items():
@@ -139,10 +133,61 @@ for model_name, L in models.items():
 
 risk_df = pd.DataFrame(risk_results)
 print("\n" + risk_df.to_string(index=False))
-
-# Save results
-#risk_df.to_csv('risk_measures_fullsample.csv', index=False)
 print("\nSaved: risk_measures_fullsample.csv")
+
+# =============================================================
+# 5a. Plot Risk Measures (VaR and ES bar charts)
+# =============================================================
+# Pivot for plotting: rows = Model, columns = Alpha
+var_pivot = risk_df.pivot(index='Model', columns='Alpha', values='VaR')
+es_pivot  = risk_df.pivot(index='Model', columns='Alpha', values='ES')
+
+models_order = var_pivot.index.tolist()
+alpha_list = sorted(var_pivot.columns.tolist())  # [0.9, 0.95, 0.99]
+alpha_labels = [f"{int(a * 100)}%" for a in alpha_list]
+
+x = np.arange(len(models_order))  # positions for models
+bar_width = 0.25
+
+# --- VaR bar chart ---
+plt.figure(figsize=(10, 6))
+for j, alpha in enumerate(alpha_list):
+    plt.bar(
+        x + j * bar_width,
+        var_pivot[alpha].values,
+        width=bar_width,
+        label=f"VaR {int(alpha * 100)}%"
+    )
+
+plt.xticks(x + bar_width, models_order, rotation=0)
+plt.ylabel('VaR (USD)', fontsize=12)
+plt.title('Value-at-Risk by Model and Confidence Level', fontsize=14, fontweight='bold')
+plt.legend(fontsize=10)
+plt.grid(alpha=0.3, axis='y')
+plt.tight_layout()
+plt.savefig('risk_measures_VaR_bars.png', dpi=300, bbox_inches='tight')
+print("Saved: risk_measures_VaR_bars.png")
+plt.show()
+
+# --- ES bar chart ---
+plt.figure(figsize=(10, 6))
+for j, alpha in enumerate(alpha_list):
+    plt.bar(
+        x + j * bar_width,
+        es_pivot[alpha].values,
+        width=bar_width,
+        label=f"ES {int(alpha * 100)}%"
+    )
+
+plt.xticks(x + bar_width, models_order, rotation=0)
+plt.ylabel('Expected Shortfall (USD)', fontsize=12)
+plt.title('Expected Shortfall by Model and Confidence Level', fontsize=14, fontweight='bold')
+plt.legend(fontsize=10)
+plt.grid(alpha=0.3, axis='y')
+plt.tight_layout()
+plt.savefig('risk_measures_ES_bars.png', dpi=300, bbox_inches='tight')
+print("Saved: risk_measures_ES_bars.png")
+plt.show()
 
 # =============================================================
 # 6. Dynamic VaR and ES (Rolling Window)
@@ -157,11 +202,9 @@ dynamic_risk = dynamic_var_es_weekly_window(
     indices,
     window=500,
     n_simulations=5000,
-    alpha=0.99
+    alpha=0.95
 )
 
-# Save rolling window results
-#dynamic_risk.to_csv('dynamic_risk_measures.csv', index=False)
 print("\nSaved: dynamic_risk_measures.csv")
 print(f"Rolling window results: {len(dynamic_risk)} time points")
 
@@ -174,27 +217,25 @@ print("="*60)
 
 fig, axes = plt.subplots(2, 1, figsize=(14, 10))
 
-# VaR over time
 axes[0].plot(dynamic_risk['Date'], dynamic_risk['VaR_M1'], 
              label='M1 (Empirical)', linewidth=1.5, alpha=0.8, color='steelblue')
 axes[0].plot(dynamic_risk['Date'], dynamic_risk['VaR_M2'], 
              label='M2 (Gaussian)', linewidth=1.5, alpha=0.8, color='coral')
 axes[0].plot(dynamic_risk['Date'], dynamic_risk['VaR_M3'], 
              label='M3 (t-Copula ML)', linewidth=1.5, alpha=0.8, color='mediumseagreen')
-axes[0].set_title('Dynamic Value-at-Risk (99%, Rolling 500-day Window)', 
+axes[0].set_title('Dynamic Value-at-Risk (95%, Rolling 500-day Window)', 
                   fontsize=14, fontweight='bold')
 axes[0].set_ylabel('VaR (USD)', fontsize=12)
 axes[0].legend(fontsize=10, loc='upper left')
 axes[0].grid(alpha=0.3)
 
-# ES over time
 axes[1].plot(dynamic_risk['Date'], dynamic_risk['ES_M1'], 
              label='M1 (Empirical)', linewidth=1.5, alpha=0.8, color='steelblue')
 axes[1].plot(dynamic_risk['Date'], dynamic_risk['ES_M2'], 
              label='M2 (Gaussian)', linewidth=1.5, alpha=0.8, color='coral')
 axes[1].plot(dynamic_risk['Date'], dynamic_risk['ES_M3'], 
              label='M3 (t-Copula ML)', linewidth=1.5, alpha=0.8, color='mediumseagreen')
-axes[1].set_title('Dynamic Expected Shortfall (99%, Rolling 500-day Window)', 
+axes[1].set_title('Dynamic Expected Shortfall (95%, Rolling 500-day Window)', 
                   fontsize=14, fontweight='bold')
 axes[1].set_xlabel('Date', fontsize=12)
 axes[1].set_ylabel('ES (USD)', fontsize=12)
@@ -216,10 +257,8 @@ if 'rho_M3' in dynamic_risk.columns and 'nu_M3' in dynamic_risk.columns:
     
     fig, axes = plt.subplots(2, 1, figsize=(14, 8))
     
-    # Filter out non-converged results for cleaner plots
     converged_data = dynamic_risk[dynamic_risk['converged_M3'] == True].copy()
     
-    # Correlation over time
     axes[0].plot(converged_data['Date'], converged_data['rho_M3'], 
                  color='steelblue', linewidth=1.5)
     axes[0].set_title('t-Copula Correlation Parameter (ρ) Over Time', 
@@ -228,7 +267,6 @@ if 'rho_M3' in dynamic_risk.columns and 'nu_M3' in dynamic_risk.columns:
     axes[0].grid(alpha=0.3)
     axes[0].axhline(y=0, color='k', linestyle='--', alpha=0.3)
     
-    # Degrees of freedom over time
     axes[1].plot(converged_data['Date'], converged_data['nu_M3'], 
                  color='coral', linewidth=1.5)
     axes[1].set_title('t-Copula Degrees of Freedom (ν) Over Time', 
@@ -242,7 +280,6 @@ if 'rho_M3' in dynamic_risk.columns and 'nu_M3' in dynamic_risk.columns:
     print("Saved: copula_parameters_over_time.png")
     plt.show()
     
-    # Summary statistics (only for converged estimates)
     print("\nt-Copula Parameter Statistics (Converged Windows Only):")
     print(f"Number of converged windows: {len(converged_data)}/{len(dynamic_risk)}")
     print(f"\nCorrelation (ρ):")
@@ -256,9 +293,6 @@ if 'rho_M3' in dynamic_risk.columns and 'nu_M3' in dynamic_risk.columns:
     print(f"  Min:  {converged_data['nu_M3'].min():.2f}")
     print(f"  Max:  {converged_data['nu_M3'].max():.2f}")
 
-# =============================================================
-# 9. Summary Statistics
-# =============================================================
 print("\n" + "="*60)
 print("Summary Statistics")
 print("="*60)

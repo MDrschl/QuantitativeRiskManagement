@@ -6,7 +6,7 @@
 
 import pandas as pd
 import numpy as np
-from scipy.stats import norm, multivariate_normal, t as t_dist
+from scipy.stats import norm, multivariate_normal, t as t_dist, skew, kurtosis
 from tqdm import tqdm
 from tcopula import fit_t_copula
 
@@ -193,23 +193,21 @@ def simulation(portfolio, Theta1, Theta2, n_simulations, model='M1', seed=42):
             cov_t = np.array([[1.0, rho_copula],
                               [rho_copula, 1.0]])
 
-            # 5) Generate multivariate t: X = Z / sqrt(S/nu), Z ~ N(0, cov_t), S ~ chi^2_nu
+            # 5) Generate multivariate t: X = sqrt(nu/W) * Z, Z ~ N(0, cov_t), W ~ chi^2_nu
             Z = multivariate_normal.rvs(mean=mean_t, cov=cov_t, size=n_simulations)
-            chi2_samples = np.random.chisquare(nu_copula, size=n_simulations)
-            t_samples = Z / np.sqrt(chi2_samples / nu_copula)[:, np.newaxis]
+            W = np.random.chisquare(nu_copula, size=n_simulations)
+            t_samples = np.sqrt(nu_copula / W)[:, np.newaxis] * Z
 
             # 6) Transform to uniforms using t CDF
             U_samples = np.clip(t_dist.cdf(t_samples, df=nu_copula), 1e-10, 1-1e-10)
-
 
             # 7) Map uniforms to Gaussian marginals with (mu_i, sigma_i)
             Theta_samples = np.zeros((n_simulations, 2))
             Theta_samples[:, 0] = norm.ppf(U_samples[:, 0], loc=mu1, scale=sigma1)
             Theta_samples[:, 1] = norm.ppf(U_samples[:, 1], loc=mu2, scale=sigma2)
 
-            # 8) Covariance matrix computed from simulated theta, whose distributions are dependent on rho_copula
+            # 8) Covariance matrix computed from simulated theta
             Sigma_Theta = np.cov(Theta_samples.T, ddof=0)
-
 
     else:
         raise ValueError("Model must be one of 'M1', 'M2', or 'M3'.")
@@ -257,6 +255,94 @@ def risk_measures(L, alpha=0.95):
     var = np.quantile(L, alpha)
     es = L[L >= var].mean()
     return var, es
+
+
+def loss_statistics(L, model_name=""):
+    """
+    Compute comprehensive statistics for a loss distribution.
+    
+    Parameters
+    ----------
+    L : np.ndarray
+        Loss distribution
+    model_name : str
+        Name of the model (for display purposes)
+    
+    Returns
+    -------
+    dict
+        Dictionary containing various statistics
+    """
+    stats = {
+        'Model': model_name,
+        'Mean': np.mean(L),
+        'Median': np.median(L),
+        'Std Dev': np.std(L),
+        'Variance': np.var(L),
+        'Min': np.min(L),
+        'Max': np.max(L),
+        'Range': np.max(L) - np.min(L),
+        'Q1 (25%)': np.percentile(L, 25),
+        'Q3 (75%)': np.percentile(L, 75),
+        'IQR': np.percentile(L, 75) - np.percentile(L, 25),
+        'Skewness': skew(L),
+        'Kurtosis': kurtosis(L),
+        'CV (Coef. of Variation)': np.std(L) / np.mean(L) if np.mean(L) != 0 else np.nan,
+        'P(Loss > 0)': np.mean(L > 0),
+        'P(Loss = 0)': np.mean(L == 0),
+        'P90': np.percentile(L, 90),
+        'P95': np.percentile(L, 95),
+        'P99': np.percentile(L, 99),
+        'P99.5': np.percentile(L, 99.5),
+        'P99.9': np.percentile(L, 99.9),
+    }
+    return stats
+
+
+def default_statistics(Y_k, d_k, portfolio, model_name=""):
+    """
+    Compute default-related statistics across simulations.
+    
+    Parameters
+    ----------
+    Y_k : np.ndarray
+        Simulated Y_k values (n_simulations × n_counterparties)
+    d_k : np.ndarray
+        Default thresholds
+    portfolio : pd.DataFrame
+        Portfolio data
+    model_name : str
+        Name of the model
+    
+    Returns
+    -------
+    dict
+        Dictionary containing default statistics
+    """
+    I_k = (Y_k <= d_k).astype(int)
+    n_defaults_per_sim = I_k.sum(axis=1)
+    
+    # Exposure-weighted default rate
+    E_k = portfolio['Exposure USD'].values
+    exposure_weighted_defaults = (I_k * E_k).sum(axis=1) / E_k.sum()
+    
+    stats = {
+        'Model': model_name,
+        'Mean # Defaults': np.mean(n_defaults_per_sim),
+        'Median # Defaults': np.median(n_defaults_per_sim),
+        'Std # Defaults': np.std(n_defaults_per_sim),
+        'Max # Defaults': np.max(n_defaults_per_sim),
+        'Min # Defaults': np.min(n_defaults_per_sim),
+        'P(No Defaults)': np.mean(n_defaults_per_sim == 0),
+        'P(≥1 Default)': np.mean(n_defaults_per_sim >= 1),
+        'P(≥5 Defaults)': np.mean(n_defaults_per_sim >= 5),
+        'P(≥10 Defaults)': np.mean(n_defaults_per_sim >= 10),
+        'Mean Exposure-Weighted Default Rate': np.mean(exposure_weighted_defaults),
+        'P95 # Defaults': np.percentile(n_defaults_per_sim, 95),
+        'P99 # Defaults': np.percentile(n_defaults_per_sim, 99),
+    }
+    
+    return stats
 
 
 # -------------------------------------------------------------

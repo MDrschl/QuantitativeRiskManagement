@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy import stats
 from scipy.stats import skew, kurtosis
-
 
 from functions import (
     preprocess_indices,
@@ -45,6 +45,137 @@ print(f"Indices data shape: {indices.shape}")
 # Weekly returns
 weekly_indices, Theta1_w, Theta2_w = preprocess_indices(indices, frequency="weekly")
 print(f"Weekly returns sample size: {len(Theta1_w)}")
+
+# Daily returns for analysis
+daily_indices, Theta1_d, Theta2_d = preprocess_indices(indices, frequency="daily")
+print(f"Daily returns sample size: {len(Theta1_d)}")
+
+# =============================================================
+# 1a. Index Returns Analysis
+# =============================================================
+print("\n" + "="*60)
+print("Analyzing Index Returns")
+print("="*60)
+
+# 1a.1 Q-Q Plot: Daily Log Returns (SPI vs SPX)
+
+plt.figure(figsize=(12, 6))
+
+# --- SPI QQ plot vs Normal ---
+ax1 = plt.subplot(1, 2, 1)
+stats.probplot(Theta1_d, dist="norm", plot=ax1)
+ax1.set_title("Q-Q Plot vs Normal: SPI Daily Log Returns", fontsize=12, fontweight='bold')
+ax1.set_xlabel("Theoretical Quantiles (Normal)")
+ax1.set_ylabel("Sample Quantiles (SPI)")
+ax1.grid(alpha=0.3)
+
+# --- SPX QQ plot vs Normal ---
+ax2 = plt.subplot(1, 2, 2)
+stats.probplot(Theta2_d, dist="norm", plot=ax2)
+ax2.set_title("Q-Q Plot vs Normal: SPX Daily Log Returns", fontsize=12, fontweight='bold')
+ax2.set_xlabel("Theoretical Quantiles (Normal)")
+ax2.set_ylabel("Sample Quantiles (SPX)")
+ax2.grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig("qq_plots_normal_spi_spx.png", dpi=300, bbox_inches="tight")
+print("Saved: qq_plots_normal_spi_spx.png")
+plt.show()
+
+# 1a.2 Rolling 100-Week Moving Average of Log Returns
+print("\nComputing 100-week rolling statistics...")
+weekly_df = weekly_indices.copy()
+weekly_df['SPI_MA_100'] = weekly_df['SPI_logret'].rolling(window=100).mean()
+weekly_df['SPX_MA_100'] = weekly_df['SPX_logret'].rolling(window=100).mean()
+
+fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+
+# SPI Rolling Average
+axes[0].plot(weekly_df['Date'], weekly_df['SPI_logret'], 
+             alpha=0.3, linewidth=0.5, color='lightblue', label='Weekly Returns')
+axes[0].plot(weekly_df['Date'], weekly_df['SPI_MA_100'], 
+             linewidth=2, color='steelblue', label='100-Week Moving Average')
+axes[0].axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+axes[0].set_title('SPI Weekly Log Returns with 100-Week Moving Average', 
+                  fontsize=13, fontweight='bold')
+axes[0].set_ylabel('Log Return', fontsize=11)
+axes[0].legend(fontsize=10, loc='upper left')
+axes[0].grid(alpha=0.3)
+
+# SPX Rolling Average
+axes[1].plot(weekly_df['Date'], weekly_df['SPX_logret'], 
+             alpha=0.3, linewidth=0.5, color='lightcoral', label='Weekly Returns')
+axes[1].plot(weekly_df['Date'], weekly_df['SPX_MA_100'], 
+             linewidth=2, color='coral', label='100-Week Moving Average')
+axes[1].axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+axes[1].set_title('SPX Weekly Log Returns with 100-Week Moving Average', 
+                  fontsize=13, fontweight='bold')
+axes[1].set_xlabel('Date', fontsize=11)
+axes[1].set_ylabel('Log Return', fontsize=11)
+axes[1].legend(fontsize=10, loc='upper left')
+axes[1].grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('rolling_moving_average_100w.png', dpi=300, bbox_inches='tight')
+print("Saved: rolling_moving_average_100w.png")
+plt.show()
+
+# 1a.3 Rolling 100-Week Correlation
+print("\nComputing 100-week rolling correlation...")
+rolling_corr = pd.Series(index=weekly_df.index, dtype=float)
+
+for i in range(99, len(weekly_df)):
+    window_spi = weekly_df['SPI_logret'].iloc[i-99:i+1].values
+    window_spx = weekly_df['SPX_logret'].iloc[i-99:i+1].values
+    rolling_corr.iloc[i] = np.corrcoef(window_spi, window_spx)[0, 1]
+
+weekly_df['Rolling_Corr_100'] = rolling_corr
+
+# Overall correlation
+overall_corr = np.corrcoef(Theta1_w, Theta2_w)[0, 1]
+
+plt.figure(figsize=(14, 6))
+plt.plot(weekly_df['Date'], weekly_df['Rolling_Corr_100'], 
+         linewidth=1.5, color='mediumseagreen', label='100-Week Rolling Correlation')
+plt.axhline(y=overall_corr, color='red', linestyle='--', linewidth=2, 
+            label=f'Overall Correlation: {overall_corr:.4f}')
+plt.axhline(y=0, color='black', linestyle='-', linewidth=1, alpha=0.3)
+plt.xlabel('Date', fontsize=12)
+plt.ylabel('Correlation Coefficient', fontsize=12)
+plt.title('100-Week Rolling Correlation between SPI and SPX Log Returns', 
+          fontsize=14, fontweight='bold')
+plt.legend(fontsize=10, loc='lower left')
+plt.grid(alpha=0.3)
+plt.ylim(-1, 1)
+plt.tight_layout()
+plt.savefig('rolling_correlation_100w.png', dpi=300, bbox_inches='tight')
+print("Saved: rolling_correlation_100w.png")
+plt.show()
+
+# Summary statistics
+print("\n" + "-"*60)
+print("Index Returns Summary Statistics")
+print("-"*60)
+print(f"\nSPI Daily Log Returns:")
+print(f"  Mean: {np.mean(Theta1_d):.6f}")
+print(f"  Std Dev: {np.std(Theta1_d):.6f}")
+print(f"  Skewness: {skew(Theta1_d):.4f}")
+print(f"  Kurtosis: {kurtosis(Theta1_d):.4f}")
+
+print(f"\nSPX Daily Log Returns:")
+print(f"  Mean: {np.mean(Theta2_d):.6f}")
+print(f"  Std Dev: {np.std(Theta2_d):.6f}")
+print(f"  Skewness: {skew(Theta2_d):.4f}")
+print(f"  Kurtosis: {kurtosis(Theta2_d):.4f}")
+
+print(f"\nCorrelation (Daily): {np.corrcoef(Theta1_d, Theta2_d)[0, 1]:.4f}")
+print(f"Correlation (Weekly): {overall_corr:.4f}")
+
+print(f"\n100-Week Rolling Correlation Statistics:")
+print(f"  Mean: {weekly_df['Rolling_Corr_100'].mean():.4f}")
+print(f"  Std Dev: {weekly_df['Rolling_Corr_100'].std():.4f}")
+print(f"  Min: {weekly_df['Rolling_Corr_100'].min():.4f}")
+print(f"  Max: {weekly_df['Rolling_Corr_100'].max():.4f}")
 
 # =============================================================
 # 2. Run Full-Sample Simulations
@@ -516,14 +647,20 @@ print("    - loss_percentiles.csv")
 print("    - risk_measures_fullsample.csv")
 print("    - dynamic_risk_measures.csv")
 print("\n  Visualization Files:")
-print("    - loss_distributions_detailed.png")
-print("    - loss_distributions_overlay.png")
-print("    - loss_distributions_tail.png")
-print("    - loss_boxplots.png")
-print("    - loss_qq_plots.png")
-print("    - loss_cdf.png")
-print("    - default_count_distributions.png")
-print("    - risk_measures_VaR_bars.png")
-print("    - risk_measures_ES_bars.png")
-print("    - dynamic_risk_measures.png")
-print("    - copula_parameters_over_time.png")
+print("    Index Analysis:")
+print("      - qq_plot_daily_returns.png")
+print("      - rolling_moving_average_100w.png")
+print("      - rolling_correlation_100w.png")
+print("    Loss Distribution Analysis:")
+print("      - loss_distributions_detailed.png")
+print("      - loss_distributions_overlay.png")
+print("      - loss_distributions_tail.png")
+print("      - loss_boxplots.png")
+print("      - loss_qq_plots.png")
+print("      - loss_cdf.png")
+print("      - default_count_distributions.png")
+print("    Risk Measures:")
+print("      - risk_measures_VaR_bars.png")
+print("      - risk_measures_ES_bars.png")
+print("      - dynamic_risk_measures.png")
+print("      - copula_parameters_over_time.png")

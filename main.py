@@ -57,22 +57,22 @@ print("\n" + "="*60)
 print("Analyzing Index Returns")
 print("="*60)
 
-# 1a.1 Q-Q Plot: Daily Log Returns (SPI vs SPX)
+# 1a.1 Q-Q Plot: Weekly Log Returns (SPI vs SPX)
 
 plt.figure(figsize=(12, 6))
 
 # --- SPI QQ plot vs Normal ---
 ax1 = plt.subplot(1, 2, 1)
-stats.probplot(Theta1_d, dist="norm", plot=ax1)
-ax1.set_title("Q-Q Plot vs Normal: SPI Daily Log Returns", fontsize=12, fontweight='bold')
+stats.probplot(Theta1_w, dist="norm", plot=ax1)
+ax1.set_title("Q-Q Plot vs Normal: SPI Weekly Log Returns", fontsize=12, fontweight='bold')
 ax1.set_xlabel("Theoretical Quantiles (Normal)")
 ax1.set_ylabel("Sample Quantiles (SPI)")
 ax1.grid(alpha=0.3)
 
 # --- SPX QQ plot vs Normal ---
 ax2 = plt.subplot(1, 2, 2)
-stats.probplot(Theta2_d, dist="norm", plot=ax2)
-ax2.set_title("Q-Q Plot vs Normal: SPX Daily Log Returns", fontsize=12, fontweight='bold')
+stats.probplot(Theta2_w, dist="norm", plot=ax2)
+ax2.set_title("Q-Q Plot vs Normal: SPX Weekly Log Returns", fontsize=12, fontweight='bold')
 ax2.set_xlabel("Theoretical Quantiles (Normal)")
 ax2.set_ylabel("Sample Quantiles (SPX)")
 ax2.grid(alpha=0.3)

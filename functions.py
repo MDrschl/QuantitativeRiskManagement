@@ -136,7 +136,7 @@ def simulation(portfolio, Theta1, Theta2, n_simulations, model='M1', seed=42):
     elif model == 'M2':
         # Gaussian copula (bivariate normal)
         mu = np.array([np.mean(Theta1), np.mean(Theta2)])
-        sigma1, sigma2 = np.std(Theta1, ddof=1), np.std(Theta2, ddof=1)
+        sigma1, sigma2 = np.std(Theta1, ddof=0), np.std(Theta2, ddof=0)
         rho = np.corrcoef(Theta1, Theta2)[0, 1]
         Sigma_Theta = np.array([
             [sigma1**2, rho * sigma1 * sigma2],
@@ -149,8 +149,8 @@ def simulation(portfolio, Theta1, Theta2, n_simulations, model='M1', seed=42):
     elif model == 'M3':
         # t-Copula with Gaussian marginals using ML estimation
         # 1) Estimate Gaussian marginals
-        mu1, sigma1 = np.mean(Theta1), np.std(Theta1, ddof=1)
-        mu2, sigma2 = np.mean(Theta2), np.std(Theta2, ddof=1)
+        mu1, sigma1 = np.mean(Theta1), np.std(Theta1, ddof=0)
+        mu2, sigma2 = np.mean(Theta2), np.std(Theta2, ddof=0)
 
         # 2) Transform historical returns to uniforms via normal CDF
         z1 = (Theta1 - mu1) / sigma1
@@ -193,24 +193,23 @@ def simulation(portfolio, Theta1, Theta2, n_simulations, model='M1', seed=42):
             cov_t = np.array([[1.0, rho_copula],
                               [rho_copula, 1.0]])
 
-            # Generate multivariate t: X = Z / sqrt(S/nu), Z ~ N(0, cov_t), S ~ chi^2_nu
+            # 5) Generate multivariate t: X = Z / sqrt(S/nu), Z ~ N(0, cov_t), S ~ chi^2_nu
             Z = multivariate_normal.rvs(mean=mean_t, cov=cov_t, size=n_simulations)
             chi2_samples = np.random.chisquare(nu_copula, size=n_simulations)
             t_samples = Z / np.sqrt(chi2_samples / nu_copula)[:, np.newaxis]
 
-            # 5) Transform to uniforms using t CDF
-            U_samples = t_dist.cdf(t_samples, df=nu_copula)
+            # 6) Transform to uniforms using t CDF
+            U_samples = np.clip(t_dist.cdf(t_samples, df=nu_copula), 1e-10, 1-1e-10)
 
-            # 6) Map uniforms to Gaussian marginals with (mu_i, sigma_i)
+
+            # 7) Map uniforms to Gaussian marginals with (mu_i, sigma_i)
             Theta_samples = np.zeros((n_simulations, 2))
             Theta_samples[:, 0] = norm.ppf(U_samples[:, 0], loc=mu1, scale=sigma1)
             Theta_samples[:, 1] = norm.ppf(U_samples[:, 1], loc=mu2, scale=sigma2)
 
-            # Covariance matrix implied by copula correlation and Gaussian marginals
-            Sigma_Theta = np.array([
-                [sigma1**2, rho_copula * sigma1 * sigma2],
-                [rho_copula * sigma1 * sigma2, sigma2**2]
-            ])
+            # 8) Covariance matrix computed from simulated theta, whose distributions are dependent on rho_copula
+            Sigma_Theta = np.cov(Theta_samples.T, ddof=0)
+
 
     else:
         raise ValueError("Model must be one of 'M1', 'M2', or 'M3'.")

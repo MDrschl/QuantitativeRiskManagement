@@ -20,7 +20,7 @@ from functions import (
     risk_measures,
     loss_statistics,
     default_statistics,
-    dynamic_var_es_weekly_window
+    dynamic_var_es_window
 )
 
 # Set plotting style
@@ -395,7 +395,7 @@ print("Computing Dynamic Risk Measures")
 print("This may take several minutes...")
 print("="*60)
 
-dynamic_risk = dynamic_var_es_weekly_window(
+dynamic_risk = dynamic_var_es_window(
     portfolio,
     indices,
     window=500,

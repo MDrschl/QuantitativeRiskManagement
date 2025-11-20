@@ -370,7 +370,7 @@ def convert_weekly(indices_daily):
 # -------------------------------------------------------------
 # (5) Dynamic VaR and ES with Rolling Window
 # -------------------------------------------------------------
-def dynamic_var_es_weekly_window(portfolio, indices_df, window=500, n_simulations=5000, alpha=0.95):
+def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000, alpha=0.95):
     """
     Compute dynamic VaR and ES over time using models M1 to M3 with ML t-copula.
     """

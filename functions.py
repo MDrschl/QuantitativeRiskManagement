@@ -376,6 +376,7 @@ def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000,
     """
     # Clean and merge full daily data once
     daily_data, _, _ = preprocess_indices(indices_df, frequency="daily")
+    weekly_full, _, _ = preprocess_indices(indices_df, frequency="weekly")
     
     E_k = portfolio['Exposure USD'].values
     R_k = portfolio['R_k'].values
@@ -383,27 +384,24 @@ def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000,
     results = []
 
     # Rolling loop
-    for i in tqdm(range(window, len(daily_data)), desc="Rolling window analysis"):
-        sample = daily_data.iloc[i - window:i].copy()
+    for i in tqdm(range(window, daily_data.shape[0]), desc="Rolling window analysis"):
 
-        weekly = (
-            sample.set_index('Date')
-            .resample('W-FRI')
-            .last()
-            .dropna()
-            .reset_index()
-        )
-        weekly['SPI_logret'] = np.log(weekly['SPI'] / weekly['SPI'].shift(1))
-        weekly['SPX_logret'] = np.log(weekly['SPX'] / weekly['SPX'].shift(1))
-        weekly = weekly.dropna()
-        
-        if len(weekly) < 20:
+        end_date = daily_data['Date'].iloc[i]
+        start_date = daily_data['Date'].iloc[i - window]
+
+        # Slice weekly data based on dates
+        mask = (weekly_full['Date'] > start_date) & (weekly_full['Date'] <= end_date)
+        weekly_window = weekly_full.loc[mask]
+
+        # Not enough weekly points
+        if len(weekly_window) < 20:
             continue
-            
-        Theta1 = weekly['SPI_logret'].values
-        Theta2 = weekly['SPX_logret'].values
 
-        var_es = {'Date': daily_data['Date'].iloc[i]}
+        # Extract weekly returns for the copula
+        Theta1 = weekly_window['SPI_logret'].values
+        Theta2 = weekly_window['SPX_logret'].values
+
+        var_es = {'Date': end_date}
         
         for model in ['M1', 'M2', 'M3']:
             try:

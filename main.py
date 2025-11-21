@@ -572,6 +572,82 @@ print("Saved: dynamic_risk_measures.png")
 plt.show()
 
 # =============================================================
+# 9a. Plot Time-Varying Correlations / Covariances
+# =============================================================
+print("\n" + "="*60)
+print("Plotting Time-Varying Systemic Correlations")
+print("="*60)
+
+# --- Implied rolling correlations from Sigma_Theta ---
+if all(col in dynamic_risk.columns for col in ['rho_M1', 'rho_M2', 'rho_M3']):
+    plt.figure(figsize=(14, 6))
+    plt.plot(dynamic_risk['Date'], dynamic_risk['rho_M1'],
+             label='Implied ρ (M1 Empirical)', linewidth=1.5, alpha=0.9, color='steelblue')
+    plt.plot(dynamic_risk['Date'], dynamic_risk['rho_M2'],
+             label='Implied ρ (M2 Gaussian)', linewidth=1.5, alpha=0.9, color='coral')
+    plt.plot(dynamic_risk['Date'], dynamic_risk['rho_M3'],
+             label='Implied ρ (M3 t-Copula)', linewidth=1.5, alpha=0.9, color='mediumseagreen')
+
+    plt.axhline(0, color='black', linestyle='--', linewidth=1, alpha=0.4)
+    plt.title('Implied Time-Varying Correlation of Systemic Factors', fontsize=14, fontweight='bold')
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Implied Correlation ρ', fontsize=12)
+    plt.legend(fontsize=10, loc='lower left')
+    plt.grid(alpha=0.3)
+    plt.ylim(-1, 1)
+    plt.tight_layout()
+    plt.savefig('dynamic_implied_correlations.png', dpi=300, bbox_inches='tight')
+    print("Saved: dynamic_implied_correlations.png")
+    plt.show()
+else:
+    print("Implied correlation columns (rho_M1, rho_M2, rho_M3) not found. "
+          "Check dynamic_var_es_window output.")
+
+# --- Optional: plot covariance elements if you stored them ---
+cov_cols = ['Sigma11_M1', 'Sigma22_M1', 'Sigma12_M1',
+            'Sigma11_M2', 'Sigma22_M2', 'Sigma12_M2',
+            'Sigma11_M3', 'Sigma22_M3', 'Sigma12_M3']
+
+if any(c in dynamic_risk.columns for c in cov_cols):
+    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+
+    # Variance of Theta1 (SPI)
+    if all(c in dynamic_risk.columns for c in ['Sigma11_M1','Sigma11_M2','Sigma11_M3']):
+        axes[0].plot(dynamic_risk['Date'], dynamic_risk['Sigma11_M1'], color='steelblue', label='M1')
+        axes[0].plot(dynamic_risk['Date'], dynamic_risk['Sigma11_M2'], color='coral', label='M2')
+        axes[0].plot(dynamic_risk['Date'], dynamic_risk['Sigma11_M3'], color='mediumseagreen', label='M3')
+        axes[0].set_title('Time-Varying Var(Θ1)', fontsize=12, fontweight='bold')
+        axes[0].set_ylabel('Σ11', fontsize=11)
+        axes[0].legend(fontsize=9)
+        axes[0].grid(alpha=0.3)
+
+    # Variance of Theta2 (SPX)
+    if all(c in dynamic_risk.columns for c in ['Sigma22_M1','Sigma22_M2','Sigma22_M3']):
+        axes[1].plot(dynamic_risk['Date'], dynamic_risk['Sigma22_M1'], color='steelblue', label='M1')
+        axes[1].plot(dynamic_risk['Date'], dynamic_risk['Sigma22_M2'], color='coral', label='M2')
+        axes[1].plot(dynamic_risk['Date'], dynamic_risk['Sigma22_M3'], color='mediumseagreen', label='M3')
+        axes[1].set_title('Time-Varying Var(Θ2)', fontsize=12, fontweight='bold')
+        axes[1].set_ylabel('Σ22', fontsize=11)
+        axes[1].legend(fontsize=9)
+        axes[1].grid(alpha=0.3)
+
+    # Covariance between Theta1 and Theta2
+    if all(c in dynamic_risk.columns for c in ['Sigma12_M1','Sigma12_M2','Sigma12_M3']):
+        axes[2].plot(dynamic_risk['Date'], dynamic_risk['Sigma12_M1'], color='steelblue', label='M1')
+        axes[2].plot(dynamic_risk['Date'], dynamic_risk['Sigma12_M2'], color='coral', label='M2')
+        axes[2].plot(dynamic_risk['Date'], dynamic_risk['Sigma12_M3'], color='mediumseagreen', label='M3')
+        axes[2].set_title('Time-Varying Cov(Θ1, Θ2)', fontsize=12, fontweight='bold')
+        axes[2].set_ylabel('Σ12', fontsize=11)
+        axes[2].set_xlabel('Date', fontsize=11)
+        axes[2].legend(fontsize=9)
+        axes[2].grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('dynamic_covariance_elements.png', dpi=300, bbox_inches='tight')
+    print("Saved: dynamic_covariance_elements.png")
+    plt.show()
+
+# =============================================================
 # 10. Analyze t-Copula Parameters Over Time
 # =============================================================
 if 'rho_M3' in dynamic_risk.columns and 'nu_M3' in dynamic_risk.columns:

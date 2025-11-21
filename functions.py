@@ -371,10 +371,6 @@ def convert_weekly(indices_daily):
 # (5) Dynamic VaR and ES with Rolling Window
 # -------------------------------------------------------------
 def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000, alpha=0.95):
-    """
-    Compute dynamic VaR and ES over time using models M1 to M3 with ML t-copula.
-    """
-    # Clean and merge full daily data once
     daily_data, _, _ = preprocess_indices(indices_df, frequency="daily")
     weekly_full, _, _ = preprocess_indices(indices_df, frequency="weekly")
     
@@ -383,21 +379,17 @@ def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000,
 
     results = []
 
-    # Rolling loop
     for i in tqdm(range(window, daily_data.shape[0]), desc="Rolling window analysis"):
 
         end_date = daily_data['Date'].iloc[i]
         start_date = daily_data['Date'].iloc[i - window]
 
-        # Slice weekly data based on dates
         mask = (weekly_full['Date'] > start_date) & (weekly_full['Date'] <= end_date)
         weekly_window = weekly_full.loc[mask]
 
-        # Not enough weekly points
         if len(weekly_window) < 20:
             continue
 
-        # Extract weekly returns for the copula
         Theta1 = weekly_window['SPI_logret'].values
         Theta2 = weekly_window['SPX_logret'].values
 
@@ -411,6 +403,12 @@ def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000,
                     model=model,
                     seed=42
                 )
+
+                var_es[f'Sigma11_{model}'] = Sigma[0, 0]
+                var_es[f'Sigma22_{model}'] = Sigma[1, 1]
+                var_es[f'Sigma12_{model}'] = Sigma[0, 1]
+                var_es[f'rho_{model}'] = Sigma[0, 1] / np.sqrt(Sigma[0, 0] * Sigma[1, 1])
+
                 losses = portfolio_loss(Y_k, d_k, E_k, R_k)
                 var_t, es_t = risk_measures(losses, alpha=alpha)
                 
@@ -418,7 +416,7 @@ def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000,
                 var_es[f'ES_{model}'] = es_t
                 
                 if model == 'M3' and copula_params is not None:
-                    var_es['rho_M3'] = copula_params['rho']
+                    var_es['rho_M3_copula'] = copula_params['rho']
                     var_es['nu_M3'] = copula_params['nu']
                     var_es['converged_M3'] = copula_params['converged']
                     
@@ -426,12 +424,17 @@ def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000,
                 print(f"Warning at date {daily_data['Date'].iloc[i]}: {str(e)}")
                 var_es[f'VaR_{model}'] = np.nan
                 var_es[f'ES_{model}'] = np.nan
+
+                var_es[f'Sigma11_{model}'] = np.nan
+                var_es[f'Sigma22_{model}'] = np.nan
+                var_es[f'Sigma12_{model}'] = np.nan
+                var_es[f'rho_{model}'] = np.nan
+
                 if model == 'M3':
-                    var_es['rho_M3'] = np.nan
+                    var_es['rho_M3_copula'] = np.nan
                     var_es['nu_M3'] = np.nan
                     var_es['converged_M3'] = False
 
         results.append(var_es)
 
-    results_df = pd.DataFrame(results)
-    return results_df
+    return pd.DataFrame(results)

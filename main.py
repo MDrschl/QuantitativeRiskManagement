@@ -120,37 +120,6 @@ plt.savefig('rolling_moving_average_100w.png', dpi=300, bbox_inches='tight')
 print("Saved: rolling_moving_average_100w.png")
 plt.show()
 
-# 1a.3 Rolling 100-Week Correlation
-print("\nComputing 100-week rolling correlation...")
-rolling_corr = pd.Series(index=weekly_df.index, dtype=float)
-
-for i in range(99, len(weekly_df)):
-    window_spi = weekly_df['SPI_logret'].iloc[i-99:i+1].values
-    window_spx = weekly_df['SPX_logret'].iloc[i-99:i+1].values
-    rolling_corr.iloc[i] = np.corrcoef(window_spi, window_spx)[0, 1]
-
-weekly_df['Rolling_Corr_100'] = rolling_corr
-
-# Overall correlation
-overall_corr = np.corrcoef(Theta1_w, Theta2_w)[0, 1]
-
-plt.figure(figsize=(14, 6))
-plt.plot(weekly_df['Date'], weekly_df['Rolling_Corr_100'], 
-         linewidth=1.5, color='mediumseagreen', label='100-Week Rolling Correlation')
-plt.axhline(y=overall_corr, color='red', linestyle='--', linewidth=2, 
-            label=f'Overall Correlation: {overall_corr:.4f}')
-plt.axhline(y=0, color='black', linestyle='-', linewidth=1, alpha=0.3)
-plt.xlabel('Date', fontsize=12)
-plt.ylabel('Correlation Coefficient', fontsize=12)
-plt.title('100-Week Rolling Correlation between SPI and SPX Log Returns', 
-          fontsize=14, fontweight='bold')
-plt.legend(fontsize=10, loc='lower left')
-plt.grid(alpha=0.3)
-plt.ylim(-1, 1)
-plt.tight_layout()
-plt.savefig('rolling_correlation_100w.png', dpi=300, bbox_inches='tight')
-print("Saved: rolling_correlation_100w.png")
-plt.show()
 
 # Summary statistics
 print("\n" + "-"*60)
@@ -167,15 +136,6 @@ print(f"  Mean: {np.mean(Theta2_d):.6f}")
 print(f"  Std Dev: {np.std(Theta2_d):.6f}")
 print(f"  Skewness: {skew(Theta2_d):.4f}")
 print(f"  Kurtosis: {kurtosis(Theta2_d):.4f}")
-
-print(f"\nCorrelation (Daily): {np.corrcoef(Theta1_d, Theta2_d)[0, 1]:.4f}")
-print(f"Correlation (Weekly): {overall_corr:.4f}")
-
-print(f"\n100-Week Rolling Correlation Statistics:")
-print(f"  Mean: {weekly_df['Rolling_Corr_100'].mean():.4f}")
-print(f"  Std Dev: {weekly_df['Rolling_Corr_100'].std():.4f}")
-print(f"  Min: {weekly_df['Rolling_Corr_100'].min():.4f}")
-print(f"  Max: {weekly_df['Rolling_Corr_100'].max():.4f}")
 
 # =============================================================
 # 2. Run Full-Sample Simulations

@@ -571,84 +571,136 @@ plt.savefig('dynamic_risk_measures.png', dpi=300, bbox_inches='tight')
 print("Saved: dynamic_risk_measures.png")
 plt.show()
 
+
 # =============================================================
-# 9a. Plot Time-Varying Correlations / Covariances
+# 10. Dynamic Covariance Structure
 # =============================================================
+
 print("\n" + "="*60)
-print("Plotting Time-Varying Systemic Correlations")
+print("Analyzing Dynamic Correlations from All Models")
 print("="*60)
 
-# --- Implied rolling correlations from Sigma_Theta ---
-if all(col in dynamic_risk.columns for col in ['rho_M1', 'rho_M2', 'rho_M3']):
-    plt.figure(figsize=(14, 6))
-    plt.plot(dynamic_risk['Date'], dynamic_risk['rho_M1'],
-             label='Implied ρ (M1 Empirical)', linewidth=1.5, alpha=0.9, color='steelblue')
-    plt.plot(dynamic_risk['Date'], dynamic_risk['rho_M2'],
-             label='Implied ρ (M2 Gaussian)', linewidth=1.5, alpha=0.9, color='coral')
-    plt.plot(dynamic_risk['Date'], dynamic_risk['rho_M3'],
-             label='Implied ρ (M3 t-Copula)', linewidth=1.5, alpha=0.9, color='mediumseagreen')
-
-    plt.axhline(0, color='black', linestyle='--', linewidth=1, alpha=0.4)
-    plt.title('Implied Time-Varying Correlation of Systemic Factors', fontsize=14, fontweight='bold')
-    plt.xlabel('Date', fontsize=12)
-    plt.ylabel('Implied Correlation ρ', fontsize=12)
-    plt.legend(fontsize=10, loc='lower left')
-    plt.grid(alpha=0.3)
-    plt.ylim(-1, 1)
+if 'rho_M1' in dynamic_risk.columns:
+    fig, ax = plt.subplots(figsize=(14, 6))
+    
+    # Plot correlation estimates from all three models
+    ax.plot(dynamic_risk['Date'], dynamic_risk['rho_M1'], 
+            label='M1 (Empirical)', linewidth=1.5, alpha=0.8, color='steelblue')
+    ax.plot(dynamic_risk['Date'], dynamic_risk['rho_M2'], 
+            label='M2 (Gaussian)', linewidth=1.5, alpha=0.8, color='coral')
+    ax.plot(dynamic_risk['Date'], dynamic_risk['rho_M3'], 
+            label='M3 (t-Copula ML)', linewidth=1.5, alpha=0.8, color='mediumseagreen')
+    
+    # Add overall correlation as reference line
+    overall_corr_weekly = np.corrcoef(Theta1_w, Theta2_w)[0, 1]
+    ax.axhline(y=overall_corr_weekly, color='red', linestyle='--', linewidth=2, 
+               label=f'Full-Sample Correlation: {overall_corr_weekly:.4f}', alpha=0.7)
+    
+    ax.axhline(y=0, color='black', linestyle='-', linewidth=1, alpha=0.3)
+    ax.set_xlabel('Date', fontsize=12)
+    ax.set_ylabel('Correlation Coefficient (ρ)', fontsize=12)
+    ax.set_title('Dynamic Correlation Estimates (Rolling 500-day Window)', 
+                 fontsize=14, fontweight='bold')
+    ax.legend(fontsize=10, loc='best')
+    ax.grid(alpha=0.3)
+    ax.set_ylim(-1, 1)
+    
     plt.tight_layout()
-    plt.savefig('dynamic_implied_correlations.png', dpi=300, bbox_inches='tight')
-    print("Saved: dynamic_implied_correlations.png")
+    plt.savefig('dynamic_correlation_all_models.png', dpi=300, bbox_inches='tight')
+    print("Saved: dynamic_correlation_all_models.png")
     plt.show()
+    
+    # Summary statistics for correlations
+    print("\nDynamic Correlation Summary Statistics:")
+    print("-" * 60)
+    
+    for model in ['M1', 'M2', 'M3']:
+        col = f'rho_{model}'
+        if col in dynamic_risk.columns:
+            valid_corr = dynamic_risk[col].dropna()
+            print(f"\n{model}:")
+            print(f"  Mean:   {valid_corr.mean():.4f}")
+            print(f"  Median: {valid_corr.median():.4f}")
+            print(f"  Std:    {valid_corr.std():.4f}")
+            print(f"  Min:    {valid_corr.min():.4f}")
+            print(f"  Max:    {valid_corr.max():.4f}")
+            print(f"  Q1:     {valid_corr.quantile(0.25):.4f}")
+            print(f"  Q3:     {valid_corr.quantile(0.75):.4f}")
+    
+    print(f"\nFull-Sample Correlation (Weekly): {overall_corr_weekly:.4f}")
+    
+    # Create comparison plot: Correlation difference between models
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+    
+    # Correlation differences
+    axes[0].plot(dynamic_risk['Date'], 
+                 dynamic_risk['rho_M2'] - dynamic_risk['rho_M1'],
+                 label='M2 - M1 (Gaussian vs Empirical)', 
+                 linewidth=1.5, alpha=0.8, color='coral')
+    axes[0].plot(dynamic_risk['Date'], 
+                 dynamic_risk['rho_M3'] - dynamic_risk['rho_M1'],
+                 label='M3 - M1 (t-Copula vs Empirical)', 
+                 linewidth=1.5, alpha=0.8, color='mediumseagreen')
+    axes[0].axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+    axes[0].set_ylabel('Correlation Difference', fontsize=12)
+    axes[0].set_title('Correlation Differences Between Models', 
+                      fontsize=13, fontweight='bold')
+    axes[0].legend(fontsize=10)
+    axes[0].grid(alpha=0.3)
+    
+    # Standard deviation of correlations (rolling 50-window)
+    axes[1].plot(dynamic_risk['Date'], 
+                 dynamic_risk['rho_M1'].rolling(window=50).std(),
+                 label='M1 (Empirical)', linewidth=1.5, alpha=0.8, color='steelblue')
+    axes[1].plot(dynamic_risk['Date'], 
+                 dynamic_risk['rho_M2'].rolling(window=50).std(),
+                 label='M2 (Gaussian)', linewidth=1.5, alpha=0.8, color='coral')
+    axes[1].plot(dynamic_risk['Date'], 
+                 dynamic_risk['rho_M3'].rolling(window=50).std(),
+                 label='M3 (t-Copula ML)', linewidth=1.5, alpha=0.8, color='mediumseagreen')
+    axes[1].set_xlabel('Date', fontsize=12)
+    axes[1].set_ylabel('Rolling Std Dev (50-day)', fontsize=12)
+    axes[1].set_title('Volatility of Correlation Estimates', 
+                      fontsize=13, fontweight='bold')
+    axes[1].legend(fontsize=10)
+    axes[1].grid(alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('correlation_comparison_analysis.png', dpi=300, bbox_inches='tight')
+    print("Saved: correlation_comparison_analysis.png")
+    plt.show()
+    
+    # Optional: Compare copula correlation vs marginal correlation for M3
+    if 'rho_M3_copula' in dynamic_risk.columns:
+        converged_data = dynamic_risk[dynamic_risk['converged_M3'] == True].copy()
+        
+        fig, ax = plt.subplots(figsize=(14, 6))
+        ax.plot(converged_data['Date'], converged_data['rho_M3'], 
+                label='Marginal Correlation (from Σ)', 
+                linewidth=1.5, alpha=0.8, color='mediumseagreen')
+        ax.plot(converged_data['Date'], converged_data['rho_M3_copula'], 
+                label='Copula Correlation Parameter', 
+                linewidth=1.5, alpha=0.8, color='darkgreen', linestyle='--')
+        ax.axhline(y=0, color='black', linestyle='-', linewidth=1, alpha=0.3)
+        ax.set_xlabel('Date', fontsize=12)
+        ax.set_ylabel('Correlation', fontsize=12)
+        ax.set_title('M3: Marginal vs Copula Correlation (Converged Windows Only)', 
+                     fontsize=14, fontweight='bold')
+        ax.legend(fontsize=10)
+        ax.grid(alpha=0.3)
+        ax.set_ylim(-1, 1)
+        
+        plt.tight_layout()
+        plt.savefig('m3_correlation_comparison.png', dpi=300, bbox_inches='tight')
+        print("Saved: m3_correlation_comparison.png")
+        plt.show()
+
 else:
-    print("Implied correlation columns (rho_M1, rho_M2, rho_M3) not found. "
-          "Check dynamic_var_es_window output.")
-
-# --- Optional: plot covariance elements if you stored them ---
-cov_cols = ['Sigma11_M1', 'Sigma22_M1', 'Sigma12_M1',
-            'Sigma11_M2', 'Sigma22_M2', 'Sigma12_M2',
-            'Sigma11_M3', 'Sigma22_M3', 'Sigma12_M3']
-
-if any(c in dynamic_risk.columns for c in cov_cols):
-    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
-
-    # Variance of Theta1 (SPI)
-    if all(c in dynamic_risk.columns for c in ['Sigma11_M1','Sigma11_M2','Sigma11_M3']):
-        axes[0].plot(dynamic_risk['Date'], dynamic_risk['Sigma11_M1'], color='steelblue', label='M1')
-        axes[0].plot(dynamic_risk['Date'], dynamic_risk['Sigma11_M2'], color='coral', label='M2')
-        axes[0].plot(dynamic_risk['Date'], dynamic_risk['Sigma11_M3'], color='mediumseagreen', label='M3')
-        axes[0].set_title('Time-Varying Var(Θ1)', fontsize=12, fontweight='bold')
-        axes[0].set_ylabel('Σ11', fontsize=11)
-        axes[0].legend(fontsize=9)
-        axes[0].grid(alpha=0.3)
-
-    # Variance of Theta2 (SPX)
-    if all(c in dynamic_risk.columns for c in ['Sigma22_M1','Sigma22_M2','Sigma22_M3']):
-        axes[1].plot(dynamic_risk['Date'], dynamic_risk['Sigma22_M1'], color='steelblue', label='M1')
-        axes[1].plot(dynamic_risk['Date'], dynamic_risk['Sigma22_M2'], color='coral', label='M2')
-        axes[1].plot(dynamic_risk['Date'], dynamic_risk['Sigma22_M3'], color='mediumseagreen', label='M3')
-        axes[1].set_title('Time-Varying Var(Θ2)', fontsize=12, fontweight='bold')
-        axes[1].set_ylabel('Σ22', fontsize=11)
-        axes[1].legend(fontsize=9)
-        axes[1].grid(alpha=0.3)
-
-    # Covariance between Theta1 and Theta2
-    if all(c in dynamic_risk.columns for c in ['Sigma12_M1','Sigma12_M2','Sigma12_M3']):
-        axes[2].plot(dynamic_risk['Date'], dynamic_risk['Sigma12_M1'], color='steelblue', label='M1')
-        axes[2].plot(dynamic_risk['Date'], dynamic_risk['Sigma12_M2'], color='coral', label='M2')
-        axes[2].plot(dynamic_risk['Date'], dynamic_risk['Sigma12_M3'], color='mediumseagreen', label='M3')
-        axes[2].set_title('Time-Varying Cov(Θ1, Θ2)', fontsize=12, fontweight='bold')
-        axes[2].set_ylabel('Σ12', fontsize=11)
-        axes[2].set_xlabel('Date', fontsize=11)
-        axes[2].legend(fontsize=9)
-        axes[2].grid(alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig('dynamic_covariance_elements.png', dpi=300, bbox_inches='tight')
-    print("Saved: dynamic_covariance_elements.png")
-    plt.show()
+    print("Warning: Correlation columns not found in dynamic_risk DataFrame.")
+    print("Please ensure the updated dynamic_var_es_window function is being used.")
 
 # =============================================================
-# 10. Analyze t-Copula Parameters Over Time
+# 11. Analyze t-Copula Parameters Over Time
 # =============================================================
 if 'rho_M3' in dynamic_risk.columns and 'nu_M3' in dynamic_risk.columns:
     print("\n" + "="*60)

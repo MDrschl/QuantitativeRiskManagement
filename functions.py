@@ -128,23 +128,32 @@ def simulation(portfolio, Theta1, Theta2, n_simulations, model='M1', seed=42):
 
     # --- Model Specification ---
     if model == 'M1':
-        # Empirical resampling
+
+        # 1) Empirical resampling
         indices = np.random.choice(len(Theta1), size=n_simulations, replace=True)
         Theta_samples = np.column_stack([Theta1[indices], Theta2[indices]])
-        Sigma_Theta = np.cov(np.column_stack([Theta1, Theta2]).T)
+
+        # 2) Covariance matrix computed from simulated theta
+        Sigma_Theta = np.cov(Theta_samples.T, ddof=0)
 
     elif model == 'M2':
-        # Gaussian copula (bivariate normal)
+        # Bivariate Normal
+        # 1) Covariance matrix for Gaussian model
         mu = np.array([np.mean(Theta1), np.mean(Theta2)])
         sigma1, sigma2 = np.std(Theta1, ddof=0), np.std(Theta2, ddof=0)
         rho = np.corrcoef(Theta1, Theta2)[0, 1]
-        Sigma_Theta = np.array([
+        Sigma_Model = np.array([
             [sigma1**2, rho * sigma1 * sigma2],
             [rho * sigma1 * sigma2, sigma2**2]
         ])
+
+        # 2) Bivariate model
         Theta_samples = multivariate_normal.rvs(
-            mean=mu, cov=Sigma_Theta, size=n_simulations
+            mean=mu, cov=Sigma_Model, size=n_simulations
         )
+        
+        # 3) Covariance matrix computed from simulated theta
+        Sigma_Theta = np.cov(Theta_samples.T, ddof=0)
 
     elif model == 'M3':
         # t-Copula with Gaussian marginals using ML estimation
@@ -371,6 +380,35 @@ def convert_weekly(indices_daily):
 # (5) Dynamic VaR and ES with Rolling Window
 # -------------------------------------------------------------
 def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000, alpha=0.95):
+    """
+    Compute dynamic VaR and ES over time using models M1 to M3 with ML t-copula.
+    Also returns correlation estimates from each model.
+    
+    Parameters
+    ----------
+    portfolio : pd.DataFrame
+        Portfolio data
+    indices_df : pd.DataFrame
+        Index data (SPI and SPX)
+    window : int
+        Rolling window size in days
+    n_simulations : int
+        Number of Monte Carlo simulations per window
+    alpha : float
+        Confidence level for VaR/ES
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns:
+        - Date: end date of each window
+        - VaR_M1, VaR_M2, VaR_M3: Value-at-Risk for each model
+        - ES_M1, ES_M2, ES_M3: Expected Shortfall for each model
+        - rho_M1, rho_M2, rho_M3: correlation estimates from each model
+        - nu_M3: degrees of freedom for t-copula (M3 only)
+        - converged_M3: whether M3 optimization converged
+    """
+    # Clean and merge full daily data once
     daily_data, _, _ = preprocess_indices(indices_df, frequency="daily")
     weekly_full, _, _ = preprocess_indices(indices_df, frequency="weekly")
     
@@ -379,17 +417,21 @@ def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000,
 
     results = []
 
+    # Rolling loop
     for i in tqdm(range(window, daily_data.shape[0]), desc="Rolling window analysis"):
 
         end_date = daily_data['Date'].iloc[i]
         start_date = daily_data['Date'].iloc[i - window]
 
+        # Slice weekly data based on dates
         mask = (weekly_full['Date'] > start_date) & (weekly_full['Date'] <= end_date)
         weekly_window = weekly_full.loc[mask]
 
+        # Not enough weekly points
         if len(weekly_window) < 20:
             continue
 
+        # Extract weekly returns for the copula
         Theta1 = weekly_window['SPI_logret'].values
         Theta2 = weekly_window['SPX_logret'].values
 
@@ -403,38 +445,38 @@ def dynamic_var_es_window(portfolio, indices_df, window=500, n_simulations=5000,
                     model=model,
                     seed=42
                 )
-
-                var_es[f'Sigma11_{model}'] = Sigma[0, 0]
-                var_es[f'Sigma22_{model}'] = Sigma[1, 1]
-                var_es[f'Sigma12_{model}'] = Sigma[0, 1]
-                var_es[f'rho_{model}'] = Sigma[0, 1] / np.sqrt(Sigma[0, 0] * Sigma[1, 1])
-
                 losses = portfolio_loss(Y_k, d_k, E_k, R_k)
                 var_t, es_t = risk_measures(losses, alpha=alpha)
                 
                 var_es[f'VaR_{model}'] = var_t
                 var_es[f'ES_{model}'] = es_t
                 
+                # Extract correlation from covariance matrix
+                # Sigma is 2x2: [[var1, cov], [cov, var2]]
+                sigma1 = np.sqrt(Sigma[0, 0])
+                sigma2 = np.sqrt(Sigma[1, 1])
+                rho = Sigma[0, 1] / (sigma1 * sigma2)
+                var_es[f'rho_{model}'] = rho
+                
+                # For M3, also store copula-specific parameters
                 if model == 'M3' and copula_params is not None:
-                    var_es['rho_M3_copula'] = copula_params['rho']
                     var_es['nu_M3'] = copula_params['nu']
                     var_es['converged_M3'] = copula_params['converged']
+                    # Note: copula_params['rho'] is the copula correlation,
+                    # which may differ slightly from the correlation in Sigma
+                    var_es['rho_M3_copula'] = copula_params['rho']
                     
             except Exception as e:
-                print(f"Warning at date {daily_data['Date'].iloc[i]}: {str(e)}")
+                print(f"Warning at date {daily_data['Date'].iloc[i]} for {model}: {str(e)}")
                 var_es[f'VaR_{model}'] = np.nan
                 var_es[f'ES_{model}'] = np.nan
-
-                var_es[f'Sigma11_{model}'] = np.nan
-                var_es[f'Sigma22_{model}'] = np.nan
-                var_es[f'Sigma12_{model}'] = np.nan
                 var_es[f'rho_{model}'] = np.nan
-
                 if model == 'M3':
-                    var_es['rho_M3_copula'] = np.nan
                     var_es['nu_M3'] = np.nan
                     var_es['converged_M3'] = False
+                    var_es['rho_M3_copula'] = np.nan
 
         results.append(var_es)
 
-    return pd.DataFrame(results)
+    results_df = pd.DataFrame(results)
+    return results_df

@@ -40,8 +40,8 @@ print("2. Testing full estimation pipeline (weekly data)")
 print("=" * 60)
 
 # Step 1: estimate Gaussian marginals N(mu_i, sigma_i^2)
-mu1_w, sigma1_w = Theta1_w.mean(), Theta1_w.std(ddof=1)
-mu2_w, sigma2_w = Theta2_w.mean(), Theta2_w.std(ddof=1)
+mu1_w, sigma1_w = Theta1_w.mean(), Theta1_w.std(ddof=0)
+mu2_w, sigma2_w = Theta2_w.mean(), Theta2_w.std(ddof=0)
 
 # Step 2: transform to uniforms via normal CDF:
 # U_i = Phi((Theta_i - mu_i) / sigma_i)

@@ -156,7 +156,7 @@ def simulation(portfolio, Theta1, Theta2, n_simulations, model='M1', seed=42):
         Sigma_Theta = np.cov(Theta_samples.T, ddof=0)
 
     elif model == 'M3':
-        # Bivariate t-Copula with Gaussian marginals
+        # Bivariate t-Copula
         # 1) Estimate Gaussian marginals
         mu1, sigma1 = np.mean(Theta1), np.std(Theta1, ddof=0)
         mu2, sigma2 = np.mean(Theta2), np.std(Theta2, ddof=0)
